@@ -25,6 +25,8 @@ function http<T = any>(
   const successHandler = (res: AxiosResponse<Response<T>>) => {
     const authStore = useAuthStore()
 
+    console.log('API Response:', { url, status: res.status, data: res.data })
+
     if (res.data.status === 'Success' || typeof res.data === 'string')
       return res.data
 
@@ -36,14 +38,34 @@ function http<T = any>(
     return Promise.reject(res.data)
   }
 
-  const failHandler = (error: Response<Error>) => {
+  const failHandler = (error: any) => {
+    console.error('API Error:', { url, error })
     afterRequest?.()
-    throw new Error(error?.message || 'Error')
+    
+    // 提供更详细的错误信息
+    if (error.response) {
+      // 服务器返回了错误状态码
+      console.error('Error response:', {
+        status: error.response.status,
+        data: error.response.data,
+        headers: error.response.headers
+      })
+      throw new Error(`请求失败: ${error.response.status} - ${error.response.data?.message || '未知错误'}`)
+    } else if (error.request) {
+      // 请求已发送但没有收到响应
+      console.error('No response received:', error.request)
+      throw new Error('服务器没有响应，请检查网络连接')
+    } else {
+      // 请求配置出错
+      console.error('Request error:', error.message)
+      throw new Error(`请求错误: ${error.message}`)
+    }
   }
 
   beforeRequest?.()
 
   method = method || 'GET'
+  console.log('API Request:', { url, method, data })
 
   const params = Object.assign(typeof data === 'function' ? data() : data ?? {}, {})
 

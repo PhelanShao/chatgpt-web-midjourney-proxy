@@ -22,6 +22,7 @@ declare namespace Chat {
 		index?:number
 		myid?:string //唯一随机
 		logo?:string
+		_id?: string // 后端数据库中的消息ID
 		
 		//progress?:string
 	}

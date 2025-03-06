@@ -8,11 +8,52 @@ import sunoLayout from '@/views/suno/layout.vue'
 import lumaLayout from '@/views/luma/layout.vue'
 
 const routes: RouteRecordRaw[] = [
+  // 认证路由
+  {
+    path: '/auth',
+    name: 'Auth',
+    component: () => import('@/views/auth/Layout.vue'),
+    children: [
+      {
+        path: 'login',
+        name: 'Login',
+        component: () => import('@/views/auth/Login.vue'),
+      },
+      {
+        path: 'register',
+        name: 'Register',
+        component: () => import('@/views/auth/Register.vue'),
+      },
+      {
+        path: 'forgot-password',
+        name: 'ForgotPassword',
+        component: () => import('@/views/auth/ForgotPassword.vue'),
+      },
+    ],
+  },
+  
+  // 用户路由
+  {
+    path: '/user',
+    name: 'User',
+    component: () => import('@/views/user/Layout.vue'),
+    meta: { requiresAuth: true },
+    children: [
+      {
+        path: 'profile',
+        name: 'Profile',
+        component: () => import('@/views/user/Profile.vue'),
+      },
+    ],
+  },
+  
+  // 主应用路由
   {
     path: '/',
     name: 'Root',
     component: ChatLayout,
     redirect: '/chat',
+    meta: { requiresAuth: true },
     children: [
       {
         path: '/chat/:uuid?',

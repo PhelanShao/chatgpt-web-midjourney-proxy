@@ -1,16 +1,20 @@
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
-import { NButton, NInput, NPopconfirm, NSelect, useMessage } from 'naive-ui'
+import { NButton, NInput, NPopconfirm, NSelect, NForm, NFormItem, NModal, useMessage } from 'naive-ui'
 import type { Language, Theme } from '@/store/modules/app/helper'
 import { SvgIcon } from '@/components/common'
-import { useAppStore, useUserStore } from '@/store'
+import { useAppStore, useUserStore, useAuthStore } from '@/store'
 import type { UserInfo } from '@/store/modules/user/helper'
 import { getCurrentDate } from '@/utils/functions'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
+import { changePassword } from '@/api/user'
+import { useRouter } from 'vue-router'
 
 const appStore = useAppStore()
 const userStore = useUserStore()
+const authStore = useAuthStore()
+const router = useRouter()
 
 const { isMobile } = useBasicLayout()
 
@@ -27,6 +31,13 @@ const name = ref(userInfo.value.name ?? '')
 const description = ref(userInfo.value.description ?? '')
 
 const backgroundImage = ref(userInfo.value.backgroundImage ?? '')
+
+// 修改密码相关
+const showPasswordModal = ref(false)
+const currentPassword = ref('')
+const newPassword = ref('')
+const confirmPassword = ref('')
+const passwordLoading = ref(false)
 
 const language = computed({
   get() {
@@ -124,6 +135,51 @@ function handleImportButtonClick(): void {
   const fileInput = document.getElementById('fileInput2') as HTMLElement
   if (fileInput)   fileInput.click()
 }
+
+// 修改密码
+async function handleChangePassword() {
+  if (!currentPassword.value) {
+    ms.error('请输入当前密码')
+    return
+  }
+  
+  if (!newPassword.value) {
+    ms.error('请输入新密码')
+    return
+  }
+  
+  if (newPassword.value !== confirmPassword.value) {
+    ms.error('两次输入的新密码不一致')
+    return
+  }
+  
+  try {
+    passwordLoading.value = true
+    await changePassword(currentPassword.value, newPassword.value)
+    ms.success('密码修改成功')
+    showPasswordModal.value = false
+    
+    // 清空输入框
+    currentPassword.value = ''
+    newPassword.value = ''
+    confirmPassword.value = ''
+  } catch (error) {
+    ms.error(error.message || '密码修改失败')
+  } finally {
+    passwordLoading.value = false
+  }
+}
+
+// 注销登录
+async function handleLogout() {
+  try {
+    await authStore.logout()
+    ms.success('注销成功')
+    router.push('/auth/login')
+  } catch (error) {
+    ms.error(error.message || '注销失败')
+  }
+}
 </script>
 
 <template>
@@ -165,6 +221,34 @@ function handleImportButtonClick(): void {
           {{ $t('common.save') }}
         </NButton>
       </div>
+      
+      <!-- 修改密码 -->
+      <div class="flex items-center space-x-4">
+        <span class="flex-shrink-0 w-[100px]">密码管理</span>
+        <NButton size="small" @click="showPasswordModal = true">
+          <template #icon>
+            <SvgIcon icon="ri:lock-password-line" />
+          </template>
+          修改密码
+        </NButton>
+      </div>
+      
+      <!-- 注销登录 -->
+      <div class="flex items-center space-x-4">
+        <span class="flex-shrink-0 w-[100px]">账号管理</span>
+        <NPopconfirm placement="bottom" @positive-click="handleLogout">
+          <template #trigger>
+            <NButton size="small" type="error">
+              <template #icon>
+                <SvgIcon icon="ri:logout-box-line" />
+              </template>
+              注销登录
+            </NButton>
+          </template>
+          确定要注销登录吗？
+        </NPopconfirm>
+      </div>
+      
       <div
         class="flex items-center space-x-4"
         :class="isMobile && 'items-start'"
@@ -235,4 +319,23 @@ function handleImportButtonClick(): void {
       </div>
     </div>
   </div>
+  
+  <!-- 修改密码弹窗 -->
+  <NModal v-model:show="showPasswordModal" preset="card" title="修改密码" style="width: 90%; max-width: 400px;">
+    <NForm>
+      <NFormItem label="当前密码" required>
+        <NInput v-model:value="currentPassword" type="password" placeholder="请输入当前密码" />
+      </NFormItem>
+      <NFormItem label="新密码" required>
+        <NInput v-model:value="newPassword" type="password" placeholder="请输入新密码" />
+      </NFormItem>
+      <NFormItem label="确认新密码" required>
+        <NInput v-model:value="confirmPassword" type="password" placeholder="请再次输入新密码" />
+      </NFormItem>
+      <div class="flex justify-end mt-4 space-x-4">
+        <NButton @click="showPasswordModal = false">取消</NButton>
+        <NButton type="primary" :loading="passwordLoading" @click="handleChangePassword">确认修改</NButton>
+      </div>
+    </NForm>
+  </NModal>
 </template>

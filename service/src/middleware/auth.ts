@@ -3,6 +3,8 @@ import { Request, Response, NextFunction } from 'express';
 import FormData from 'form-data';
 import fetch from 'node-fetch';
 import md5 from 'md5';
+import jwt from 'jsonwebtoken';
+import User, { findUserById } from '../models/user';
 
 // 存储IP地址和错误计数的字典
 const ipErrorCount = {};
@@ -23,6 +25,65 @@ export const mlog =(...arg)=>{
   console.log( currentTime,...arg)
 }
 
+// 扩展Request接口以包含用户信息
+declare global {
+  namespace Express {
+    interface Request {
+      user?: any;
+    }
+  }
+}
+// 定义JWT payload类型
+interface JwtPayloadUser {
+  id: string;
+  role: string;
+  iat?: number;
+  exp?: number;
+}
+
+// JWT认证中间件
+export const jwtAuth = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (!token) throw new Error('认证失败：未提供令牌');
+    
+    // 验证并断言类型
+    const decoded = jwt.verify(token, process.env.JWT_SECRET) as JwtPayloadUser;
+    
+    // 查找用户
+    const user = await findUserById(decoded.id);
+    if (!user) throw new Error('认证失败：用户不存在');
+    
+    // 检查用户状态
+    if (user.status !== 'active') throw new Error('认证失败：用户已禁用');
+    
+    // 将用户信息添加到请求对象
+    req.user = {
+      id: user._id,
+      email: user.email,
+      username: user.username,
+      role: user.role
+    };
+    
+    next();
+  } catch (error) {
+    res.status(401).send({ status: 'Unauthorized', message: error.message, data: null });
+  }
+};
+
+// 管理员认证中间件
+export const adminAuth = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    jwtAuth(req, res, () => {
+      if (!req.user || req.user.role !== 'admin')
+        return res.status(403).send({ status: 'Forbidden', message: '需要管理员权限', data: null });
+      next();
+    });
+  } catch (error) {
+    res.status(401).send({ status: 'Unauthorized', message: error.message, data: null });
+  }
+};
+
 export const verify=  async ( req :Request , res:Response ) => {
   try {
     checkLimit( req, res );
@@ -42,6 +103,7 @@ export const verify=  async ( req :Request , res:Response ) => {
 }
 
 export const auth = async ( req :Request , res:Response , next:NextFunction ) => {
+  
   
 
   const AUTH_SECRET_KEY = process.env.AUTH_SECRET_KEY

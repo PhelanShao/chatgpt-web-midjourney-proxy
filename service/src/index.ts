@@ -18,6 +18,12 @@ import axios from 'axios';
 import AWS  from 'aws-sdk';
 import { v4 as uuidv4} from 'uuid';
 import { viggleProxyFileDo,viggleProxy, lumaProxy, runwayProxy, ideoProxy, ideoProxyFileDo, klingProxy, pikaProxy, udioProxy, runwaymlProxy, pixverseProxy, sunoProxy } from './myfun'
+import { connectDB } from './database'
+import authRoutes from './routes/auth'
+import userRoutes from './routes/user'
+import adminRoutes from './routes/admin'
+import conversationRoutes from './routes/conversation'
+import userSettingRoutes from './routes/user_setting'
 
 
 const app = express()
@@ -31,7 +37,6 @@ app.use(express.static('public' ,{
 } ))
 //app.use(express.json())
 app.use(bodyParser.json({ limit: '10mb' })); //大文件传输
-
 
 
 app.all('*', (_, res, next) => {
@@ -77,55 +82,15 @@ router.post('/config', auth, async (req, res) => {
   }
 })
 
-router.post('/session', async (req, res) => {
-  try {
-    const AUTH_SECRET_KEY = process.env.AUTH_SECRET_KEY
-    const hasAuth = isNotEmptyString(AUTH_SECRET_KEY)
-    const isUpload= isNotEmptyString(  process.env.API_UPLOADER )
-    const isHideServer= isNotEmptyString(  process.env.HIDE_SERVER );
-    const amodel=   process.env.OPENAI_API_MODEL?? "gpt-3.5-turbo" ;
-    const isApiGallery=  isNotEmptyString(  process.env.MJ_API_GALLERY );
-    const cmodels =   process.env.CUSTOM_MODELS??'' ;
-    const baiduId=process.env.TJ_BAIDU_ID?? "" ;
-    const googleId=process.env.TJ_GOOGLE_ID?? "" ;
-    const notify = process.env.SYS_NOTIFY?? "" ;
-    const disableGpt4 = process.env.DISABLE_GPT4?? "" ;
-    const isUploadR2 = isNotEmptyString(process.env.R2_DOMAIN);
-    const isWsrv =  process.env.MJ_IMG_WSRV?? "" 
-    const uploadImgSize =  process.env.UPLOAD_IMG_SIZE?? "1" 
-    const gptUrl = process.env.GPT_URL?? ""; 
-    const theme = process.env.SYS_THEME?? "dark"; 
-    const isCloseMdPreview = process.env.CLOSE_MD_PREVIEW?true:false
-    const uploadType= process.env.UPLOAD_TYPE
-    const turnstile= process.env.TURNSTILE_SITE
-    const menuDisable= process.env.MENU_DISABLE??""
-    const visionModel= process.env.VISION_MODEL??""
-    const systemMessage= process.env.SYSTEM_MESSAGE??""
-    const customVisionModel= process.env.CUSTOM_VISION_MODELS??""
-    const backgroundImage = process.env.BACKGROUND_IMAGE ?? ""
-    let  isHk= (process.env.OPENAI_API_BASE_URL??"").toLocaleLowerCase().indexOf('-hk')>0
-    if(!isHk)  isHk= (process.env.LUMA_SERVER??"").toLocaleLowerCase().indexOf('-hk')>0
-    if(!isHk)  isHk= (process.env.VIGGLE_SERVER??"").toLocaleLowerCase().indexOf('-hk')>0
-    
-
-    const data= { disableGpt4,isWsrv,uploadImgSize,theme,isCloseMdPreview,uploadType,
-      notify , baiduId, googleId,isHideServer,isUpload, auth: hasAuth
-      , model: currentModel(),amodel,isApiGallery,cmodels,isUploadR2,gptUrl
-      ,turnstile,menuDisable,visionModel,systemMessage,customVisionModel,backgroundImage,isHk
-    }
-    res.send({  status: 'Success', message: '', data})
-  }
-  catch (error) {
-    res.send({ status: 'Fail', message: error.message, data: null })
-  }
-})
+// 全局变量，用于存储用户管理系统状态
+let userManagementEnabled = false;
 
 router.post('/verify', verify)
 router.get('/reg', regCookie )
 
- const API_BASE_URL = isNotEmptyString(process.env.OPENAI_API_BASE_URL)
-    ? process.env.OPENAI_API_BASE_URL
-    : 'https://api.openai.com'
+const API_BASE_URL = isNotEmptyString(process.env.OPENAI_API_BASE_URL)
+   ? process.env.OPENAI_API_BASE_URL
+   : 'https://api.openai.com'
 
 app.use('/mjapi',authV2 , proxy(process.env.MJ_SERVER?process.env.MJ_SERVER:'https://api.openai.com', {
   https: false, limit: '10mb',
@@ -349,8 +314,146 @@ app.use('/pixverse' ,authV2, pixverseProxy  );
 
 
 
-app.use('', router)
-app.use('/api', router)
-app.set('trust proxy', 1)
+// 连接数据库并根据连接结果决定是否启用用户系统
+connectDB().then(conn => {
+  if (conn) {
+    // 数据库连接成功，注册用户系统路由
+    app.use('/auth', authRoutes)
+    app.use('/user', userRoutes)
+    app.use('/admin', adminRoutes)
+    app.use('/conversation', conversationRoutes)
+    app.use('/user-setting', userSettingRoutes)
+    mlog('User management system is enabled');
+    userManagementEnabled = true;
+  } else {
+    // 数据库连接失败，不注册用户系统路由
+    mlog('User management system is disabled');
+    userManagementEnabled = false;
+  }
 
-app.listen(3002, () => globalThis.console.log('Server is running on port 3002'))
+  // 会话API
+  router.post('/session', async (req, res) => {
+    try {
+      const AUTH_SECRET_KEY = process.env.AUTH_SECRET_KEY
+      const hasAuth = isNotEmptyString(AUTH_SECRET_KEY)
+      const isUpload= isNotEmptyString(  process.env.API_UPLOADER )
+      const isHideServer= isNotEmptyString(  process.env.HIDE_SERVER );
+      const amodel=   process.env.OPENAI_API_MODEL?? "gpt-3.5-turbo" ;
+      const isApiGallery=  isNotEmptyString(  process.env.MJ_API_GALLERY );
+      const cmodels =   process.env.CUSTOM_MODELS??'' ;
+      const baiduId=process.env.TJ_BAIDU_ID?? "" ;
+      const googleId=process.env.TJ_GOOGLE_ID?? "" ;
+      const notify = process.env.SYS_NOTIFY?? "" ;
+      const disableGpt4 = process.env.DISABLE_GPT4?? "" ;
+      const isUploadR2 = isNotEmptyString(process.env.R2_DOMAIN);
+      const isWsrv =  process.env.MJ_IMG_WSRV?? ""
+      const uploadImgSize =  process.env.UPLOAD_IMG_SIZE?? "1"
+      const gptUrl = process.env.GPT_URL?? "";
+      const theme = process.env.SYS_THEME?? "dark";
+      const isCloseMdPreview = process.env.CLOSE_MD_PREVIEW?true:false
+      const uploadType= process.env.UPLOAD_TYPE
+      const turnstile= process.env.TURNSTILE_SITE
+      const menuDisable= process.env.MENU_DISABLE??""
+      const visionModel= process.env.VISION_MODEL??""
+      const systemMessage= process.env.SYSTEM_MESSAGE??""
+      const customVisionModel= process.env.CUSTOM_VISION_MODELS??""
+      const backgroundImage = process.env.BACKGROUND_IMAGE ?? ""
+      let  isHk= (process.env.OPENAI_API_BASE_URL??"").toLocaleLowerCase().indexOf('-hk')>0
+      if(!isHk)  isHk= (process.env.LUMA_SERVER??"").toLocaleLowerCase().indexOf('-hk')>0
+      if(!isHk)  isHk= (process.env.VIGGLE_SERVER??"").toLocaleLowerCase().indexOf('-hk')>0
+      
+
+      const data= { disableGpt4,isWsrv,uploadImgSize,theme,isCloseMdPreview,uploadType,
+        notify , baiduId, googleId,isHideServer,isUpload, auth: hasAuth
+        , model: currentModel(),amodel,isApiGallery,cmodels,isUploadR2,gptUrl
+        ,turnstile,menuDisable,visionModel,systemMessage,customVisionModel,backgroundImage,isHk,
+        // 添加用户管理系统状态
+        userManagementEnabled
+      }
+      res.send({  status: 'Success', message: '', data})
+    }
+    catch (error) {
+      res.send({ status: 'Fail', message: error.message, data: null })
+    }
+  })
+
+  app.use('', router)
+  app.use('/api', router)
+  app.set('trust proxy', 1)
+
+  // 错误处理中间件
+  app.use((err, req, res, next) => {
+    mlog('Server Error:', err.stack);
+    res.status(500).json({
+      status: 'Error',
+      message: err.message || '服务器内部错误',
+      data: null
+    });
+  });
+
+  // 启动服务器
+  app.listen(3002, () => {
+    mlog('Server is running on port 3002');
+    mlog(userManagementEnabled ? 'User management system is enabled' : 'User management system is disabled');
+  });
+}).catch(err => {
+  mlog('error', 'Failed to initialize database:', err.message);
+  
+  // 即使数据库初始化失败，也启动服务器
+  userManagementEnabled = false;
+  
+  // 会话API
+  router.post('/session', async (req, res) => {
+    try {
+      const AUTH_SECRET_KEY = process.env.AUTH_SECRET_KEY
+      const hasAuth = isNotEmptyString(AUTH_SECRET_KEY)
+      const isUpload= isNotEmptyString(  process.env.API_UPLOADER )
+      const isHideServer= isNotEmptyString(  process.env.HIDE_SERVER );
+      const amodel=   process.env.OPENAI_API_MODEL?? "gpt-3.5-turbo" ;
+      const isApiGallery=  isNotEmptyString(  process.env.MJ_API_GALLERY );
+      const cmodels =   process.env.CUSTOM_MODELS??'' ;
+      const baiduId=process.env.TJ_BAIDU_ID?? "" ;
+      const googleId=process.env.TJ_GOOGLE_ID?? "" ;
+      const notify = process.env.SYS_NOTIFY?? "" ;
+      const disableGpt4 = process.env.DISABLE_GPT4?? "" ;
+      const isUploadR2 = isNotEmptyString(process.env.R2_DOMAIN);
+      const isWsrv =  process.env.MJ_IMG_WSRV?? ""
+      const uploadImgSize =  process.env.UPLOAD_IMG_SIZE?? "1"
+      const gptUrl = process.env.GPT_URL?? "";
+      const theme = process.env.SYS_THEME?? "dark";
+      const isCloseMdPreview = process.env.CLOSE_MD_PREVIEW?true:false
+      const uploadType= process.env.UPLOAD_TYPE
+      const turnstile= process.env.TURNSTILE_SITE
+      const menuDisable= process.env.MENU_DISABLE??""
+      const visionModel= process.env.VISION_MODEL??""
+      const systemMessage= process.env.SYSTEM_MESSAGE??""
+      const customVisionModel= process.env.CUSTOM_VISION_MODELS??""
+      const backgroundImage = process.env.BACKGROUND_IMAGE ?? ""
+      let  isHk= (process.env.OPENAI_API_BASE_URL??"").toLocaleLowerCase().indexOf('-hk')>0
+      if(!isHk)  isHk= (process.env.LUMA_SERVER??"").toLocaleLowerCase().indexOf('-hk')>0
+      if(!isHk)  isHk= (process.env.VIGGLE_SERVER??"").toLocaleLowerCase().indexOf('-hk')>0
+      
+
+      const data= { disableGpt4,isWsrv,uploadImgSize,theme,isCloseMdPreview,uploadType,
+        notify , baiduId, googleId,isHideServer,isUpload, auth: hasAuth
+        , model: currentModel(),amodel,isApiGallery,cmodels,isUploadR2,gptUrl
+        ,turnstile,menuDisable,visionModel,systemMessage,customVisionModel,backgroundImage,isHk,
+        // 添加用户管理系统状态
+        userManagementEnabled: false
+      }
+      res.send({  status: 'Success', message: '', data})
+    }
+    catch (error) {
+      res.send({ status: 'Fail', message: error.message, data: null })
+    }
+  })
+  
+  app.use('', router)
+  app.use('/api', router)
+  app.set('trust proxy', 1)
+
+  app.listen(3002, () => {
+    mlog('Server is running on port 3002');
+    mlog('User management system is disabled due to database connection failure');
+  });
+});

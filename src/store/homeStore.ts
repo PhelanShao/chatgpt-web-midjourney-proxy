@@ -1,6 +1,14 @@
 import { gptsType, mlog } from '@/api';
 import { reactive } from 'vue'
 import { ss } from '@/utils/storage'
+import { useUserSettingStore } from '@/store/modules/user_setting';
+
+// 声明TAURI全局变量
+declare global {
+    interface Window {
+        __TAURI__: any;
+    }
+}
 
 export const homeStore = reactive({
     myData:{
@@ -166,23 +174,75 @@ let v:gptServerType={
     return v ;
 }
 const getServerInit= ():gptServerType =>{
+    console.log('初始化服务器设置');
     let v:gptServerType=getServerDefault();
-    let str = localStorage.getItem('gptServerStore');
-    if(str){
-        let old = JSON.parse(str);
-        if(old) v={...v,...old};
+    console.log('默认服务器设置:', {
+        OPENAI_API_KEY: v.OPENAI_API_KEY ? '***' : '',
+        OPENAI_API_BASE_URL: v.OPENAI_API_BASE_URL
+    });
+    
+    try {
+        // 尝试从用户设置中获取API设置
+        console.log('尝试从用户设置中获取API设置');
+        const userSettingStore = useUserSettingStore();
+        if (userSettingStore) {
+            console.log('用户设置存储获取成功');
+            if (userSettingStore.api_settings) {
+                console.log('找到用户API设置:', {
+                    OPENAI_API_KEY: userSettingStore.api_settings.OPENAI_API_KEY ? '***' : '',
+                    OPENAI_API_BASE_URL: userSettingStore.api_settings.OPENAI_API_BASE_URL
+                });
+                v = {...v, ...userSettingStore.api_settings};
+            } else {
+                console.log('用户API设置为空');
+            }
+        } else {
+            console.log('用户设置存储为空');
+        }
+    } catch (error) {
+        console.error('获取用户API设置失败:', error);
     }
+    
+    console.log('最终服务器设置:', {
+        OPENAI_API_KEY: v.OPENAI_API_KEY ? '***' : '',
+        OPENAI_API_BASE_URL: v.OPENAI_API_BASE_URL
+    });
     return v;
 }
 
 export const gptServerStore= reactive({
     myData:getServerInit(),
     setMyData(v: Partial<gptServerType>){
-         this.myData={...this.myData,...v}; 
-         localStorage.setItem('gptServerStore', JSON.stringify( this.myData));
+         this.myData={...this.myData,...v};
+         
+         try {
+             // 保存到用户设置
+             const userSettingStore = useUserSettingStore();
+             if (userSettingStore) {
+                 userSettingStore.saveApiSettings(this.myData);
+             }
+         } catch (error) {
+             console.error('保存用户API设置失败:', error);
+         }
     }
     ,setInit(){
         this.setMyData(getServerDefault());
+    }
+    // 重新加载用户的API设置
+    ,reloadUserSettings() {
+        console.log('开始重新加载用户的API设置');
+        const oldSettings = { ...this.myData };
+        this.myData = getServerInit();
+        console.log('API设置重新加载完成', {
+            old: {
+                OPENAI_API_KEY: oldSettings.OPENAI_API_KEY ? '***' : undefined,
+                OPENAI_API_BASE_URL: oldSettings.OPENAI_API_BASE_URL
+            },
+            new: {
+                OPENAI_API_KEY: this.myData.OPENAI_API_KEY ? '***' : undefined,
+                OPENAI_API_BASE_URL: this.myData.OPENAI_API_BASE_URL
+            }
+        });
     }
 })
 
